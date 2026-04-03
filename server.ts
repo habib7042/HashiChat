@@ -265,13 +265,25 @@ async function startServer() {
 
   // Periodic cleanup: Remove messages seen more than 2 minutes ago
   setInterval(async () => {
-    if (!DATABASE_URL) return;
+    if (!pool) return;
     try {
-      const result = await pool.query(
-        "DELETE FROM messages WHERE seen_at IS NOT NULL AND seen_at <= (CURRENT_TIMESTAMP - INTERVAL '2 minutes')"
+      // Find IDs of messages to be deleted
+      const toDelete = await pool.query(
+        "SELECT id, room FROM messages WHERE seen_at IS NOT NULL AND seen_at <= (CURRENT_TIMESTAMP - INTERVAL '2 minutes')"
       );
-      if (result.rowCount! > 0) {
-        console.log(`Cleaned up ${result.rowCount} expired messages from Neon.`);
+      
+      if (toDelete.rowCount! > 0) {
+        const ids = toDelete.rows.map(r => r.id as number);
+        const rooms = [...new Set(toDelete.rows.map(r => r.room as string))];
+
+        await pool.query("DELETE FROM messages WHERE id = ANY($1)", [ids]);
+        
+        // Notify rooms about deleted messages
+        rooms.forEach((room: string) => {
+          io.to(room).emit("messages-deleted", ids);
+        });
+
+        console.log(`Cleaned up ${toDelete.rowCount} expired messages from Neon.`);
       }
     } catch (err) {
       console.error("Cleanup error:", err);

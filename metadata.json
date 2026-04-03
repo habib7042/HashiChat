@@ -1,5 +1,5 @@
 {
-  "name": "LiveStream Chat",
-  "description": "A real-time chat application powered by Socket.io and Express.",
+  "name": "JogaJog",
+  "description": "A real-time ephemeral chat application powered by Socket.io and Neon PostgreSQL.",
   "requestFramePermissions": []
 }

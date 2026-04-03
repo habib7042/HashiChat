@@ -60,6 +60,10 @@ export default function App() {
       setMessages([]);
     });
 
+    newSocket.on("messages-deleted", (ids: (string | number)[]) => {
+      setMessages((prev) => prev.filter((msg) => !ids.includes(msg.id)));
+    });
+
     newSocket.on("message-history", (history: Message[]) => {
       setMessages(history);
     });
@@ -188,8 +192,8 @@ export default function App() {
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
               <MessageSquare className="text-white w-8 h-8" />
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">LiveStream Chat</h1>
-            <p className="text-neutral-400 text-sm mt-1">Real-time communication, simplified.</p>
+            <h1 className="text-2xl font-bold text-white tracking-tight">JogaJog</h1>
+            <p className="text-neutral-400 text-sm mt-1">Ephemeral real-time chat.</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -265,7 +269,7 @@ export default function App() {
             <MessageSquare className="text-white w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-white font-semibold leading-none">LiveStream Chat</h2>
+            <h2 className="text-white font-semibold leading-none">JogaJog</h2>
             <div className="flex items-center gap-2 mt-1">
               <div className="flex items-center gap-1.5">
                 <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
@@ -311,7 +315,7 @@ export default function App() {
       </header>
 
       {/* Messages Area */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full">
+      <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full pb-32 sm:pb-32">
         <AnimatePresence initial={false}>
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-neutral-500 py-20">
@@ -498,19 +502,53 @@ export default function App() {
       </AnimatePresence>
 
       {/* Input Area */}
-      <footer className="p-4 sm:p-6 border-t border-neutral-800 bg-neutral-900/50 backdrop-blur-md">
-        <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-3">
-          <input
-            type="text"
-            value={message}
-            onChange={handleTyping}
-            placeholder="Type a message..."
-            className="flex-1 bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
-          />
+      <footer className="fixed bottom-0 left-0 right-0 p-4 sm:p-6 border-t border-neutral-800 bg-neutral-900/80 backdrop-blur-lg z-40">
+        <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-3 relative">
+          <div className="relative flex-1 flex items-center">
+            <input
+              type="text"
+              value={message}
+              onChange={handleTyping}
+              placeholder="Type a message..."
+              className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker(showEmojiPicker === 'input' ? null : 'input')}
+              className="absolute right-3 text-neutral-500 hover:text-neutral-300 transition-colors"
+            >
+              <Smile className="w-5 h-5" />
+            </button>
+            
+            <AnimatePresence>
+              {showEmojiPicker === 'input' && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: -20 }}
+                  exit={{ opacity: 0, scale: 0.8, y: -10 }}
+                  className="absolute bottom-full right-0 mb-4 p-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex gap-2 z-50"
+                >
+                  {EMOJIS.map(emoji => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        setMessage(prev => prev + emoji);
+                        setShowEmojiPicker(null);
+                      }}
+                      className="w-10 h-10 flex items-center justify-center hover:bg-neutral-800 rounded-xl transition-colors text-xl"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <button
             type="submit"
             disabled={!message.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-900/20 active:scale-95"
+            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-900/20 active:scale-95 flex-shrink-0"
           >
             <Send className="w-5 h-5" />
           </button>
