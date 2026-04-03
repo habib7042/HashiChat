@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
+import sharp from "sharp";
 
 const { Pool } = pg;
 
@@ -57,6 +58,16 @@ async function initDb() {
         username TEXT NOT NULL,
         UNIQUE(message_id, emoji, username)
       );
+    `);
+
+    // Migration: Add pin to rooms if it doesn't exist
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='rooms' AND column_name='pin') THEN
+          ALTER TABLE rooms ADD COLUMN pin TEXT;
+        END IF;
+      END $$;
     `);
 
     // Migration: Add image_url to messages if it doesn't exist
@@ -123,6 +134,25 @@ async function startServer() {
       }
     };
     emitActiveRooms();
+
+    socket.on("compress-image", async (data: { image_url: string }) => {
+      try {
+        const base64Data = data.image_url.split(",")[1];
+        const buffer = Buffer.from(base64Data, "base64");
+        
+        // Compress using sharp
+        const compressedBuffer = await sharp(buffer)
+          .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 75 })
+          .toBuffer();
+        
+        const compressedBase64 = `data:image/jpeg;base64,${compressedBuffer.toString("base64")}`;
+        socket.emit("image-compressed", { image_url: compressedBase64 });
+      } catch (err) {
+        console.error("Compression error:", err);
+        socket.emit("error", { message: "Failed to compress image." });
+      }
+    });
 
     socket.on("join-room", async (data: { room: string; pin?: string }) => {
       const { room, pin } = data;

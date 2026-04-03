@@ -37,6 +37,8 @@ export default function App() {
   const [showEmojiPicker, setShowEmojiPicker] = useState<(string | number) | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -74,6 +76,11 @@ export default function App() {
 
     newSocket.on("chat-cleared", () => {
       setMessages([]);
+    });
+
+    newSocket.on("image-compressed", (data: { image_url: string }) => {
+      setPreviewImage(data.image_url);
+      setIsCompressing(false);
     });
 
     newSocket.on("messages-deleted", (ids: (string | number)[]) => {
@@ -187,23 +194,31 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image size must be less than 5MB");
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage("Image size must be less than 10MB");
       return;
     }
 
-    setIsUploading(true);
+    setIsCompressing(true);
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
-      socket?.emit("send-message", {
-        image_url: base64,
+      socket?.emit("compress-image", { image_url: base64 });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleConfirmSendImage = () => {
+    if (previewImage && socket) {
+      setIsUploading(true);
+      socket.emit("send-message", {
+        image_url: previewImage,
         sender: username,
         room: room,
       });
+      setPreviewImage(null);
       setIsUploading(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleClearChat = () => {
@@ -388,10 +403,10 @@ export default function App() {
           {isAdmin && (
             <button
               onClick={() => setShowClearConfirm(true)}
-              className="flex items-center gap-2 px-2.5 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 text-red-500 rounded-lg text-xs font-semibold transition-all"
+              className="hidden xs:flex items-center gap-2 px-2.5 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 text-red-500 rounded-lg text-xs font-semibold transition-all"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Clear</span>
+              <span>Clear</span>
             </button>
           )}
           <div className="flex items-center gap-2 sm:gap-3">
@@ -545,6 +560,52 @@ export default function App() {
         <div ref={messagesEndRef} />
       </main>
 
+      {/* Image Preview / Compression Dialog */}
+      <AnimatePresence>
+        {previewImage && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-white">Preview & Send</h3>
+                <button onClick={() => setPreviewImage(null)} className="text-neutral-500 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="relative aspect-video bg-black rounded-xl overflow-hidden mb-6 border border-neutral-800">
+                <img 
+                  src={previewImage} 
+                  alt="Compressed Preview" 
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 backdrop-blur-md rounded text-[10px] text-white font-bold uppercase tracking-widest">
+                  Compressed (~500KB)
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setPreviewImage(null)} 
+                  className="flex-1 px-4 py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleConfirmSendImage} 
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-900/20"
+                >
+                  Send Image
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Confirmation Dialog */}
       <AnimatePresence>
         {showClearConfirm && (
@@ -583,7 +644,11 @@ export default function App() {
               className="absolute left-3 text-neutral-500 hover:text-blue-500 transition-colors"
               title="Send Image"
             >
-              {isUploading ? <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <ImageIcon className="w-5 h-5" />}
+              {isCompressing || isUploading ? (
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <ImageIcon className="w-5 h-5" />
+              )}
             </button>
             <input
               type="file"
