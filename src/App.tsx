@@ -4,7 +4,7 @@ import { Send, User, Hash, MessageSquare, LogIn, Copy, Check } from "lucide-reac
 import { motion, AnimatePresence } from "motion/react";
 
 interface Message {
-  id: string;
+  id: string | number;
   text: string;
   sender: string;
   timestamp: string;
@@ -17,8 +17,10 @@ export default function App() {
   const [room, setRoom] = useState("general");
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const newSocket = io(window.location.origin, {
@@ -35,8 +37,23 @@ export default function App() {
       console.error("Connection error:", err.message);
     });
 
+    newSocket.on("message-history", (history: Message[]) => {
+      setMessages(history);
+    });
+
     newSocket.on("receive-message", (data: Message) => {
       setMessages((prev) => [...prev, data]);
+    });
+
+    newSocket.on("user-typing", (data: { username: string; isTyping: boolean }) => {
+      setTypingUsers((prev) => {
+        if (data.isTyping) {
+          if (prev.includes(data.username)) return prev;
+          return [...prev, data.username];
+        } else {
+          return prev.filter((u) => u !== data.username);
+        }
+      });
     });
 
     return () => {
@@ -46,7 +63,7 @@ export default function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, typingUsers]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -60,6 +77,20 @@ export default function App() {
     }
   };
 
+  const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+
+    if (socket) {
+      socket.emit("typing", { username, room });
+
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit("stop-typing", { username, room });
+      }, 2000);
+    }
+  };
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && socket) {
@@ -69,6 +100,7 @@ export default function App() {
         room: room,
       });
       setMessage("");
+      socket.emit("stop-typing", { username, room });
     }
   };
 
@@ -266,6 +298,26 @@ export default function App() {
             })
           )}
         </AnimatePresence>
+        
+        {/* Typing Indicator */}
+        <AnimatePresence>
+          {typingUsers.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 5 }}
+              className="flex items-center gap-2 text-neutral-500 text-[10px] font-medium ml-12"
+            >
+              <div className="flex gap-1">
+                <span className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>{typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
         <div ref={messagesEndRef} />
       </main>
 
@@ -275,7 +327,7 @@ export default function App() {
           <input
             type="text"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleTyping}
             placeholder="Type a message..."
             className="flex-1 bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
           />
