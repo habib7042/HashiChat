@@ -105,7 +105,7 @@ async function startServer() {
     transports: ["polling", "websocket"],
     pingTimeout: 60000,
     pingInterval: 25000,
-    maxHttpBufferSize: 1e7 // 10MB for images
+    maxHttpBufferSize: 2e7 // 20MB to accommodate base64 overhead for 10MB images
   });
 
   const PORT = 3000;
@@ -136,8 +136,11 @@ async function startServer() {
     emitActiveRooms();
 
     socket.on("compress-image", async (data: { image_url: string }) => {
+      console.log(`Compression request from ${socket.id}, size: ${Math.round(data.image_url.length / 1024)}KB`);
       try {
         const base64Data = data.image_url.split(",")[1];
+        if (!base64Data) throw new Error("Invalid image data");
+        
         const buffer = Buffer.from(base64Data, "base64");
         
         // Compress using sharp
@@ -147,10 +150,11 @@ async function startServer() {
           .toBuffer();
         
         const compressedBase64 = `data:image/jpeg;base64,${compressedBuffer.toString("base64")}`;
+        console.log(`Compression successful for ${socket.id}, new size: ${Math.round(compressedBase64.length / 1024)}KB`);
         socket.emit("image-compressed", { image_url: compressedBase64 });
       } catch (err) {
         console.error("Compression error:", err);
-        socket.emit("error", { message: "Failed to compress image." });
+        socket.emit("error", { message: "Failed to compress image. Please try a smaller file." });
       }
     });
 
@@ -215,6 +219,7 @@ async function startServer() {
     });
 
     socket.on("send-message", async (data) => {
+      console.log(`Message from ${socket.id} to ${data.room}, text: ${!!data.text}, image: ${!!data.image_url}`);
       try {
         if (!pool) {
           // Fallback if DB is not connected

@@ -48,13 +48,20 @@ export default function App() {
 
   useEffect(() => {
     const newSocket = io({
-      transports: ["polling", "websocket"],
-      reconnectionAttempts: 5,
+      transports: ["websocket", "polling"], // Prefer websocket for large payloads
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
     });
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
       console.log("Connected to server");
+      setErrorMessage(null);
+    });
+
+    newSocket.on("connect_error", (err) => {
+      console.error("Socket connection error:", err);
+      setErrorMessage("Connection lost. Reconnecting...");
     });
 
     newSocket.on("active-rooms", (rooms: ActiveRoom[]) => {
@@ -209,6 +216,10 @@ export default function App() {
   };
 
   const handleConfirmSendImage = () => {
+    if (!socket?.connected) {
+      setErrorMessage("Not connected to server. Please wait...");
+      return;
+    }
     if (previewImage && socket) {
       setIsUploading(true);
       socket.emit("send-message", {
