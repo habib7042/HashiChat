@@ -19,6 +19,11 @@ async function startServer() {
 
   const PORT = 3000;
 
+  // Health check endpoint
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", socketConnected: io.engine.clientsCount });
+  });
+
   // Socket.io logic
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);

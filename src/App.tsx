@@ -20,8 +20,19 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const newSocket = io();
+    const newSocket = io(window.location.origin, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 5,
+    });
     setSocket(newSocket);
+
+    newSocket.on("connect", () => {
+      console.log("Connected to server");
+    });
+
+    newSocket.on("connect_error", (err) => {
+      console.error("Connection error:", err.message);
+    });
 
     newSocket.on("receive-message", (data: Message) => {
       setMessages((prev) => [...prev, data]);
