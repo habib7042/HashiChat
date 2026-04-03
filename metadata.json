@@ -1,0 +1,5 @@
+{
+  "name": "LiveStream Chat",
+  "description": "A real-time chat application powered by Socket.io and Express.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,216 @@
+import React, { useState, useEffect, useRef } from "react";
+import { io, Socket } from "socket.io-client";
+import { Send, User, Hash, MessageSquare, LogIn } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+
+interface Message {
+  id: string;
+  text: string;
+  sender: string;
+  timestamp: string;
+}
+
+export default function App() {
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [username, setUsername] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [room, setRoom] = useState("general");
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const newSocket = io();
+    setSocket(newSocket);
+
+    newSocket.on("receive-message", (data: Message) => {
+      setMessages((prev) => [...prev, data]);
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (username.trim()) {
+      setIsLoggedIn(true);
+      socket?.emit("join-room", room);
+    }
+  };
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (message.trim() && socket) {
+      socket.emit("send-message", {
+        text: message,
+        sender: username,
+        room: room,
+      });
+      setMessage("");
+    }
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 font-sans">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-2xl p-8 shadow-2xl"
+        >
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
+              <MessageSquare className="text-white w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">LiveStream Chat</h1>
+            <p className="text-neutral-400 text-sm mt-1">Real-time communication, simplified.</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 ml-1">
+                Display Name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter your name..."
+                  className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 ml-1">
+                Room
+              </label>
+              <div className="relative">
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                <input
+                  type="text"
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value.toLowerCase())}
+                  placeholder="general"
+                  className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 active:scale-[0.98]"
+            >
+              <LogIn className="w-4 h-4" />
+              Join Chat
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-neutral-950 flex flex-col font-sans">
+      {/* Header */}
+      <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <MessageSquare className="text-white w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="text-white font-semibold leading-none">LiveStream Chat</h2>
+            <div className="flex items-center gap-1.5 mt-1">
+              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-medium">#{room}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs text-neutral-400">Logged in as</p>
+            <p className="text-sm text-white font-medium">{username}</p>
+          </div>
+          <div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center border border-neutral-700">
+            <User className="text-neutral-400 w-5 h-5" />
+          </div>
+        </div>
+      </header>
+
+      {/* Messages Area */}
+      <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full">
+        <AnimatePresence initial={false}>
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-neutral-500 py-20">
+              <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mb-4 border border-neutral-800">
+                <Hash className="w-8 h-8 opacity-20" />
+              </div>
+              <p className="text-sm">No messages yet. Start the conversation!</p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, x: msg.sender === username ? 20 : -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`flex flex-col ${msg.sender === username ? "items-end" : "items-start"}`}
+              >
+                <div className="flex items-center gap-2 mb-1 px-1">
+                  <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-tighter">
+                    {msg.sender === username ? "You" : msg.sender}
+                  </span>
+                  <span className="text-[10px] text-neutral-600">
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div
+                  className={`max-w-[85%] sm:max-w-md px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                    msg.sender === username
+                      ? "bg-blue-600 text-white rounded-tr-none"
+                      : "bg-neutral-800 text-neutral-200 rounded-tl-none border border-neutral-700"
+                  }`}
+                >
+                  {msg.text}
+                </div>
+              </motion.div>
+            ))
+          )}
+        </AnimatePresence>
+        <div ref={messagesEndRef} />
+      </main>
+
+      {/* Input Area */}
+      <footer className="p-4 sm:p-6 border-t border-neutral-800 bg-neutral-900/50 backdrop-blur-md">
+        <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-3">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-1 bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
+          />
+          <button
+            type="submit"
+            disabled={!message.trim()}
+            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-900/20 active:scale-95"
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </form>
+      </footer>
+    </div>
+  );
+}
