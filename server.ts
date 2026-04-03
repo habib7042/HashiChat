@@ -13,16 +13,23 @@ const __dirname = path.dirname(__filename);
 
 // Neon (PostgreSQL) Connection
 const DATABASE_URL = process.env.DATABASE_URL;
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, // Required for Neon
-  },
-});
+let pool: pg.Pool | null = null;
+
+if (DATABASE_URL) {
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+}
 
 // Initialize Database Table
 async function initDb() {
-  if (!DATABASE_URL) {
+  if (!pool) {
     console.warn("DATABASE_URL not found. Database features will be disabled.");
     return;
   }
@@ -37,15 +44,26 @@ async function initDb() {
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         seen_at TIMESTAMP DEFAULT NULL
       );
+      CREATE TABLE IF NOT EXISTS reactions (
+        id SERIAL PRIMARY KEY,
+        message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+        emoji TEXT NOT NULL,
+        username TEXT NOT NULL,
+        UNIQUE(message_id, emoji, username)
+      );
     `);
     client.release();
-    console.log("Connected to Neon (PostgreSQL) and initialized table.");
+    console.log("Connected to Neon (PostgreSQL) and initialized tables.");
   } catch (err) {
     console.error("Database initialization error:", err);
+    pool = null; // Disable DB features if connection fails
   }
 }
 
 initDb();
+
+// Track room owners (first person to join)
+const roomOwners = new Map<string, string>();
 
 async function startServer() {
   const app = express();
@@ -53,14 +71,23 @@ async function startServer() {
   const io = new Server(httpServer, {
     cors: {
       origin: "*",
+      methods: ["GET", "POST"],
+      credentials: true
     },
+    transports: ["polling", "websocket"],
+    pingTimeout: 60000,
+    pingInterval: 25000,
   });
 
   const PORT = 3000;
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", socketConnected: io.engine.clientsCount });
+    res.json({ 
+      status: "ok", 
+      socketConnected: io.engine.clientsCount,
+      databaseConnected: !!pool 
+    });
   });
 
   // Socket.io logic
@@ -68,15 +95,33 @@ async function startServer() {
     console.log("A user connected:", socket.id);
 
     socket.on("join-room", async (room) => {
-      socket.join(room);
-      console.log(`User ${socket.id} joined room: ${room}`);
-
-      if (!DATABASE_URL) return;
-
-      // Fetch message history for the room
       try {
+        socket.join(room);
+        console.log(`User ${socket.id} joined room: ${room}`);
+
+        // Assign room owner if it doesn't exist
+        if (!roomOwners.has(room)) {
+          roomOwners.set(room, socket.id);
+          socket.emit("admin-status", true);
+        } else {
+          socket.emit("admin-status", false);
+        }
+
+        if (!pool) {
+          socket.emit("message-history", []);
+          return;
+        }
+
+        // Fetch message history with reactions
         const result = await pool.query(
-          "SELECT * FROM messages WHERE room = $1 ORDER BY timestamp ASC LIMIT 50",
+          `SELECT m.*, 
+            COALESCE(json_agg(json_build_object('emoji', r.emoji, 'username', r.username)) FILTER (WHERE r.id IS NOT NULL), '[]') as reactions
+           FROM messages m
+           LEFT JOIN reactions r ON m.id = r.message_id
+           WHERE m.room = $1
+           GROUP BY m.id
+           ORDER BY m.timestamp ASC
+           LIMIT 50`,
           [room]
         );
         socket.emit("message-history", result.rows);
@@ -87,30 +132,32 @@ async function startServer() {
           [room]
         );
       } catch (err) {
-        console.error("Error fetching history:", err);
+        console.error("Error in join-room:", err);
+        socket.emit("error", { message: "Failed to join room or fetch history" });
       }
     });
 
     socket.on("send-message", async (data) => {
-      if (!DATABASE_URL) {
-        // Fallback if DB is not connected
-        io.to(data.room).emit("receive-message", {
-          id: Date.now(),
-          text: data.text,
-          sender: data.sender,
-          room: data.room,
-          timestamp: new Date().toISOString(),
-        });
-        return;
-      }
-
       try {
+        if (!pool) {
+          // Fallback if DB is not connected
+          io.to(data.room).emit("receive-message", {
+            id: Date.now(),
+            text: data.text,
+            sender: data.sender,
+            room: data.room,
+            timestamp: new Date().toISOString(),
+            reactions: []
+          });
+          return;
+        }
+
         // Determine if message is seen immediately (other users in room)
         const isSeen = io.sockets.adapter.rooms.get(data.room)?.size! > 1;
         const seenAt = isSeen ? new Date() : null;
 
         const result = await pool.query(
-          "INSERT INTO messages (text, sender, room, seen_at) VALUES ($1, $2, $3, $4) RETURNING *",
+          "INSERT INTO messages (text, sender, room, seen_at) VALUES ($1, $2, $3, $4) RETURNING *, '[]'::json as reactions",
           [data.text, data.sender, data.room, seenAt]
         );
         
@@ -118,6 +165,44 @@ async function startServer() {
         io.to(data.room).emit("receive-message", result.rows[0]);
       } catch (err) {
         console.error("Error saving message:", err);
+        socket.emit("error", { message: "Failed to send message" });
+      }
+    });
+
+    socket.on("add-reaction", async (data) => {
+      try {
+        if (!pool) {
+          io.to(data.room).emit("receive-reaction", data);
+          return;
+        }
+
+        // Insert reaction, ignore if already exists (unique constraint)
+        await pool.query(
+          "INSERT INTO reactions (message_id, emoji, username) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+          [data.messageId, data.emoji, data.username]
+        );
+
+        io.to(data.room).emit("receive-reaction", data);
+      } catch (err) {
+        console.error("Error adding reaction:", err);
+      }
+    });
+
+    socket.on("remove-reaction", async (data) => {
+      try {
+        if (!pool) {
+          io.to(data.room).emit("receive-remove-reaction", data);
+          return;
+        }
+
+        await pool.query(
+          "DELETE FROM reactions WHERE message_id = $1 AND emoji = $2 AND username = $3",
+          [data.messageId, data.emoji, data.username]
+        );
+
+        io.to(data.room).emit("receive-remove-reaction", data);
+      } catch (err) {
+        console.error("Error removing reaction:", err);
       }
     });
 
@@ -133,6 +218,44 @@ async function startServer() {
         username: data.username,
         isTyping: false
       });
+    });
+
+    socket.on("clear-chat", async (data) => {
+      try {
+        // Verify admin status
+        if (roomOwners.get(data.room) !== socket.id) {
+          socket.emit("error", { message: "Only room administrators can clear chat history." });
+          return;
+        }
+
+        if (pool) {
+          await pool.query("DELETE FROM messages WHERE room = $1", [data.room]);
+        }
+
+        io.to(data.room).emit("chat-cleared");
+        console.log(`Chat cleared for room: ${data.room}`);
+      } catch (err) {
+        console.error("Error clearing chat:", err);
+        socket.emit("error", { message: "Failed to clear chat history." });
+      }
+    });
+
+    socket.on("disconnecting", () => {
+      // Handle room ownership transfer if owner leaves
+      for (const room of socket.rooms) {
+        if (roomOwners.get(room) === socket.id) {
+          roomOwners.delete(room);
+          // Find next available user in room
+          const clients = io.sockets.adapter.rooms.get(room);
+          if (clients && clients.size > 1) {
+            const nextOwnerId = Array.from(clients).find(id => id !== socket.id);
+            if (nextOwnerId) {
+              roomOwners.set(room, nextOwnerId);
+              io.to(nextOwnerId).emit("admin-status", true);
+            }
+          }
+        }
+      }
     });
 
     socket.on("disconnect", () => {
