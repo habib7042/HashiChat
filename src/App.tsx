@@ -212,32 +212,58 @@ export default function App() {
               <p className="text-sm">No messages yet. Start the conversation!</p>
             </div>
           ) : (
-            messages.map((msg) => (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, x: msg.sender === username ? 20 : -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className={`flex flex-col ${msg.sender === username ? "items-end" : "items-start"}`}
-              >
-                <div className="flex items-center gap-2 mb-1 px-1">
-                  <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-tighter">
-                    {msg.sender === username ? "You" : msg.sender}
-                  </span>
-                  <span className="text-[10px] text-neutral-600">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-                <div
-                  className={`max-w-[85%] sm:max-w-md px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
-                    msg.sender === username
-                      ? "bg-blue-600 text-white rounded-tr-none"
-                      : "bg-neutral-800 text-neutral-200 rounded-tl-none border border-neutral-700"
-                  }`}
+            messages.map((msg) => {
+              const isMe = msg.sender === username;
+              // Simple color hash for avatars based on sender name
+              const colors = [
+                'bg-red-500', 'bg-blue-500', 'bg-green-500', 
+                'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 
+                'bg-indigo-500', 'bg-cyan-500'
+              ];
+              const colorIndex = msg.sender.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+              const avatarColor = colors[colorIndex];
+
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className={`flex items-end gap-3 ${isMe ? "flex-row-reverse" : "flex-row"}`}
                 >
-                  {msg.text}
-                </div>
-              </motion.div>
-            ))
+                  {/* Avatar */}
+                  <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white shadow-sm border border-white/10 ${isMe ? 'bg-blue-600' : avatarColor}`}>
+                    {msg.sender.substring(0, 2).toUpperCase()}
+                  </div>
+
+                  <div className={`flex flex-col max-w-[75%] sm:max-w-[65%] ${isMe ? "items-end" : "items-start"}`}>
+                    {/* Sender Name & Time */}
+                    <div className={`flex items-center gap-2 mb-1 px-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">
+                        {isMe ? "You" : msg.sender}
+                      </span>
+                      <span className="text-[10px] text-neutral-600 font-medium">
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    {/* Message Bubble */}
+                    <div
+                      className={`relative px-4 py-2.5 rounded-2xl text-sm shadow-md transition-all hover:shadow-lg ${
+                        isMe
+                          ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-none border border-blue-500/30"
+                          : "bg-neutral-800 text-neutral-200 rounded-tl-none border border-neutral-700/50"
+                      }`}
+                    >
+                      {msg.text}
+                      
+                      {/* Tail decoration for bubbles */}
+                      <div className={`absolute top-0 w-2 h-2 ${isMe ? "-right-1 bg-blue-600" : "-left-1 bg-neutral-800"}`} 
+                           style={{ clipPath: isMe ? 'polygon(0 0, 0 100%, 100% 0)' : 'polygon(0 0, 100% 100%, 100% 0)' }} />
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
           )}
         </AnimatePresence>
         <div ref={messagesEndRef} />
