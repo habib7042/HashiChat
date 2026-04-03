@@ -37,6 +37,7 @@ export default function App() {
   const [showEmojiPicker, setShowEmojiPicker] = useState<(string | number) | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +64,8 @@ export default function App() {
     });
 
     newSocket.on("error", (err: { message: string }) => {
-      alert(err.message);
+      setErrorMessage(err.message);
+      setTimeout(() => setErrorMessage(null), 5000);
     });
 
     newSocket.on("admin-status", (status: boolean) => {
@@ -247,6 +249,20 @@ export default function App() {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5">
+              <AnimatePresence>
+                {errorMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-red-500/10 border border-red-500/30 text-red-500 p-3 rounded-xl text-xs font-medium flex items-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    {errorMessage}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div>
                 <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
                   Your Name
@@ -308,12 +324,12 @@ export default function App() {
             </form>
           </div>
 
-          <div className="hidden md:flex flex-col w-64 border-l border-neutral-800 pl-8">
+          <div className="flex flex-col w-full md:w-64 md:border-l border-neutral-800 md:pl-8 mt-6 md:mt-0 pt-6 md:pt-0 border-t md:border-t-0">
             <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-green-500" />
               Active Rooms
             </h3>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+            <div className="flex-1 max-h-48 md:max-h-none overflow-y-auto space-y-2 pr-2 custom-scrollbar">
               {activeRooms.length === 0 ? (
                 <p className="text-xs text-neutral-600 italic">No active rooms yet.</p>
               ) : (
