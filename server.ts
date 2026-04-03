@@ -36,11 +36,17 @@ async function initDb() {
   try {
     const client = await pool.connect();
     await client.query(`
+      CREATE TABLE IF NOT EXISTS rooms (
+        name TEXT PRIMARY KEY,
+        pin TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
       CREATE TABLE IF NOT EXISTS messages (
         id SERIAL PRIMARY KEY,
-        text TEXT NOT NULL,
+        text TEXT,
+        image_url TEXT,
         sender TEXT NOT NULL,
-        room TEXT NOT NULL,
+        room TEXT NOT NULL REFERENCES rooms(name) ON DELETE CASCADE,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         seen_at TIMESTAMP DEFAULT NULL
       );
@@ -77,6 +83,7 @@ async function startServer() {
     transports: ["polling", "websocket"],
     pingTimeout: 60000,
     pingInterval: 25000,
+    maxHttpBufferSize: 1e7 // 10MB for images
   });
 
   const PORT = 3000;
@@ -94,8 +101,37 @@ async function startServer() {
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
 
-    socket.on("join-room", async (room) => {
+    // Send active rooms on connection
+    const emitActiveRooms = async () => {
+      if (!pool) return;
       try {
+        const result = await pool.query("SELECT name, pin IS NOT NULL as has_pin FROM rooms ORDER BY created_at DESC");
+        socket.emit("active-rooms", result.rows);
+      } catch (err) {
+        console.error("Error fetching active rooms:", err);
+      }
+    };
+    emitActiveRooms();
+
+    socket.on("join-room", async (data: { room: string; pin?: string }) => {
+      const { room, pin } = data;
+      try {
+        if (pool) {
+          // Check if room exists and PIN matches
+          const roomResult = await pool.query("SELECT * FROM rooms WHERE name = $1", [room]);
+          if (roomResult.rowCount! > 0) {
+            const dbRoom = roomResult.rows[0];
+            if (dbRoom.pin && dbRoom.pin !== pin) {
+              socket.emit("error", { message: "Incorrect PIN for this room." });
+              return;
+            }
+          } else {
+            // Create new room
+            await pool.query("INSERT INTO rooms (name, pin) VALUES ($1, $2)", [room, pin || null]);
+            io.emit("room-created", { name: room, has_pin: !!pin });
+          }
+        }
+
         socket.join(room);
         console.log(`User ${socket.id} joined room: ${room}`);
 
@@ -144,6 +180,7 @@ async function startServer() {
           io.to(data.room).emit("receive-message", {
             id: Date.now(),
             text: data.text,
+            image_url: data.image_url,
             sender: data.sender,
             room: data.room,
             timestamp: new Date().toISOString(),
@@ -157,8 +194,8 @@ async function startServer() {
         const seenAt = isSeen ? new Date() : null;
 
         const result = await pool.query(
-          "INSERT INTO messages (text, sender, room, seen_at) VALUES ($1, $2, $3, $4) RETURNING *, '[]'::json as reactions",
-          [data.text, data.sender, data.room, seenAt]
+          "INSERT INTO messages (text, image_url, sender, room, seen_at) VALUES ($1, $2, $3, $4, $5) RETURNING *, '[]'::json as reactions",
+          [data.text || null, data.image_url || null, data.sender, data.room, seenAt]
         );
         
         // Broadcast the saved message

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { Send, User, Hash, MessageSquare, LogIn, Copy, Check, Smile, Trash2, X, AlertTriangle } from "lucide-react";
+import { Send, User, Hash, MessageSquare, LogIn, Copy, Check, Smile, Trash2, X, AlertTriangle, Image as ImageIcon, Lock, ShieldCheck, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface Reaction {
@@ -10,10 +10,16 @@ interface Reaction {
 
 interface Message {
   id: string | number;
-  text: string;
+  text?: string;
+  image_url?: string;
   sender: string;
   timestamp: string;
   reactions: Reaction[];
+}
+
+interface ActiveRoom {
+  name: string;
+  has_pin: boolean;
 }
 
 export default function App() {
@@ -21,15 +27,19 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [room, setRoom] = useState("general");
+  const [room, setRoom] = useState("");
+  const [pin, setPin] = useState("");
+  const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>([]);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState<(string | number) | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
@@ -44,12 +54,16 @@ export default function App() {
       console.log("Connected to server");
     });
 
-    newSocket.on("connect_error", (err) => {
-      console.error("Connection error:", err.message);
+    newSocket.on("active-rooms", (rooms: ActiveRoom[]) => {
+      setActiveRooms(rooms);
+    });
+
+    newSocket.on("room-created", (newRoom: ActiveRoom) => {
+      setActiveRooms(prev => [newRoom, ...prev.filter(r => r.name !== newRoom.name)]);
     });
 
     newSocket.on("error", (err: { message: string }) => {
-      console.error("Server error:", err.message);
+      alert(err.message);
     });
 
     newSocket.on("admin-status", (status: boolean) => {
@@ -116,15 +130,27 @@ export default function App() {
     scrollToBottom();
   }, [messages, typingUsers]);
 
+  // Client-side cleanup fallback: remove messages older than 2m 5s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      setMessages(prev => prev.filter(msg => {
+        const msgTime = new Date(msg.timestamp).getTime();
+        return (now - msgTime) < 125000; // 2 minutes + 5 seconds buffer
+      }));
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (username.trim()) {
+    if (username.trim() && room.trim()) {
       setIsLoggedIn(true);
-      socket?.emit("join-room", room);
+      socket?.emit("join-room", { room, pin });
     }
   };
 
@@ -144,7 +170,7 @@ export default function App() {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (message.trim() && socket) {
+    if ((message.trim() || isUploading) && socket) {
       socket.emit("send-message", {
         text: message,
         sender: username,
@@ -153,6 +179,29 @@ export default function App() {
       setMessage("");
       socket.emit("stop-typing", { username, room });
     }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size must be less than 5MB");
+      return;
+    }
+
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      socket?.emit("send-message", {
+        image_url: base64,
+        sender: username,
+        room: room,
+      });
+      setIsUploading(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleClearChat = () => {
@@ -186,75 +235,103 @@ export default function App() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-2xl p-8 shadow-2xl"
+          className="w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-10 shadow-2xl flex flex-col md:flex-row gap-10"
         >
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
-              <MessageSquare className="text-white w-8 h-8" />
-            </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">JogaJog</h1>
-            <p className="text-neutral-400 text-sm mt-1">Ephemeral real-time chat.</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 ml-1">
-                Display Name
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your name..."
-                  className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
-                  required
-                />
+          <div className="flex-1">
+            <div className="flex flex-col items-center md:items-start mb-8">
+              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
+                <MessageSquare className="text-white w-8 h-8" />
               </div>
+              <h1 className="text-3xl font-bold text-white tracking-tight">JogaJog</h1>
+              <p className="text-neutral-400 text-sm mt-1">Ephemeral real-time chat.</p>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 ml-1">
-                Chat Code
-              </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
+                  Your Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
                   <input
                     type="text"
-                    value={room}
-                    onChange={(e) => setRoom(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                    placeholder="e.g. alpha-123"
-                    className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Display name"
+                    className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-2xl py-3.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
                     required
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-                    setRoom(code);
-                  }}
-                  className="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 px-4 rounded-xl text-xs font-medium transition-colors"
-                  title="Generate random code"
-                >
-                  Generate
-                </button>
               </div>
-              <p className="text-[10px] text-neutral-600 mt-1.5 ml-1">
-                Share this code with others to have them join your private chat.
-              </p>
-            </div>
 
-            <button
-              type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 active:scale-[0.98]"
-            >
-              <LogIn className="w-4 h-4" />
-              Join Chat
-            </button>
-          </form>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
+                    Room Name
+                  </label>
+                  <div className="relative">
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <input
+                      type="text"
+                      value={room}
+                      onChange={(e) => setRoom(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                      placeholder="e.g. secret-base"
+                      className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-2xl py-3.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
+                    PIN (Optional)
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <input
+                      type="password"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      placeholder="Room PIN"
+                      className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-2xl py-3.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 active:scale-[0.98] text-lg"
+              >
+                <LogIn className="w-5 h-5" />
+                Join or Create Room
+              </button>
+            </form>
+          </div>
+
+          <div className="hidden md:flex flex-col w-64 border-l border-neutral-800 pl-8">
+            <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-green-500" />
+              Active Rooms
+            </h3>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+              {activeRooms.length === 0 ? (
+                <p className="text-xs text-neutral-600 italic">No active rooms yet.</p>
+              ) : (
+                activeRooms.map(r => (
+                  <button
+                    key={r.name}
+                    onClick={() => setRoom(r.name)}
+                    className="w-full text-left p-3 rounded-xl bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/50 hover:border-neutral-600 transition-all group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-neutral-300 group-hover:text-white truncate">#{r.name}</span>
+                      {r.has_pin && <Lock className="w-3 h-3 text-neutral-600" />}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
         </motion.div>
       </div>
     );
@@ -263,7 +340,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col font-sans">
       {/* Header */}
-      <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-10">
+      <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <MessageSquare className="text-white w-4 h-4" />
@@ -278,7 +355,6 @@ export default function App() {
               <button 
                 onClick={copyRoomCode}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 transition-colors group"
-                title="Copy Chat Code"
               >
                 {copied ? (
                   <Check className="w-2.5 h-2.5 text-green-500" />
@@ -286,36 +362,36 @@ export default function App() {
                   <Copy className="w-2.5 h-2.5 text-neutral-500 group-hover:text-neutral-300" />
                 )}
                 <span className="text-[9px] text-neutral-500 group-hover:text-neutral-300 font-medium">
-                  {copied ? "Copied!" : "Copy Code"}
+                  {copied ? "Copied!" : "Copy"}
                 </span>
               </button>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {isAdmin && (
             <button
               onClick={() => setShowClearConfirm(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 text-red-500 rounded-lg text-xs font-semibold transition-all"
+              className="flex items-center gap-2 px-2.5 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 text-red-500 rounded-lg text-xs font-semibold transition-all"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Clear Chat</span>
+              <span className="hidden xs:inline">Clear</span>
             </button>
           )}
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs text-neutral-400">Logged in as</p>
-              <p className="text-sm text-white font-medium">{username} {isAdmin && <span className="text-[10px] text-blue-400 font-bold ml-1">(Admin)</span>}</p>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="text-right hidden xs:block">
+              <p className="text-sm text-white font-medium truncate max-w-[80px]">{username}</p>
+              {isAdmin && <p className="text-[9px] text-blue-400 font-bold uppercase tracking-tighter">Admin</p>}
             </div>
-            <div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center border border-neutral-700">
-              <User className="text-neutral-400 w-5 h-5" />
+            <div className="w-9 h-9 bg-neutral-800 rounded-full flex items-center justify-center border border-neutral-700">
+              <User className="text-neutral-400 w-4 h-4" />
             </div>
           </div>
         </div>
       </header>
 
       {/* Messages Area */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full pb-32 sm:pb-32">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-4xl mx-auto w-full pb-32 sm:pb-32">
         <AnimatePresence initial={false}>
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-neutral-500 py-20">
@@ -327,16 +403,9 @@ export default function App() {
           ) : (
             messages.map((msg) => {
               const isMe = msg.sender === username;
-              // Simple color hash for avatars based on sender name
-              const colors = [
-                'bg-red-500', 'bg-blue-500', 'bg-green-500', 
-                'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 
-                'bg-indigo-500', 'bg-cyan-500'
-              ];
+              const colors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-cyan-500'];
               const colorIndex = msg.sender.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
               const avatarColor = colors[colorIndex];
-
-              // Group reactions by emoji
               const reactionGroups = msg.reactions.reduce((acc, r) => {
                 acc[r.emoji] = (acc[r.emoji] || 0) + 1;
                 return acc;
@@ -347,41 +416,44 @@ export default function App() {
                   key={msg.id}
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className={`flex items-end gap-3 ${isMe ? "flex-row-reverse" : "flex-row"}`}
+                  className={`flex items-end gap-2 sm:gap-3 ${isMe ? "flex-row-reverse" : "flex-row"}`}
                 >
-                  {/* Avatar */}
-                  <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white shadow-sm border border-white/10 ${isMe ? 'bg-blue-600' : avatarColor}`}>
+                  <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] sm:text-[10px] font-bold text-white shadow-sm border border-white/10 ${isMe ? 'bg-blue-600' : avatarColor}`}>
                     {msg.sender.substring(0, 2).toUpperCase()}
                   </div>
 
-                  <div className={`flex flex-col max-w-[75%] sm:max-w-[65%] ${isMe ? "items-end" : "items-start"}`}>
-                    {/* Sender Name & Time */}
+                  <div className={`flex flex-col max-w-[85%] sm:max-w-[65%] ${isMe ? "items-end" : "items-start"}`}>
                     <div className={`flex items-center gap-2 mb-1 px-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
-                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">
-                        {isMe ? "You" : msg.sender}
-                      </span>
-                      <span className="text-[10px] text-neutral-600 font-medium">
-                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">{isMe ? "You" : msg.sender}</span>
+                      <span className="text-[10px] text-neutral-600 font-medium">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
 
-                    {/* Message Bubble */}
                     <div className="relative group">
                       <div
-                        className={`relative px-4 py-2.5 rounded-2xl text-sm shadow-md transition-all hover:shadow-lg ${
+                        className={`relative px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl text-sm shadow-md transition-all hover:shadow-lg overflow-hidden ${
                           isMe
                             ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-none border border-blue-500/30"
                             : "bg-neutral-800 text-neutral-200 rounded-tl-none border border-neutral-700/50"
                         }`}
                       >
-                        {msg.text}
-                        
-                        {/* Tail decoration for bubbles */}
+                        {msg.image_url ? (
+                          <div className="flex flex-col gap-2">
+                            <img 
+                              src={msg.image_url} 
+                              alt="Shared" 
+                              className="max-w-full rounded-lg shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+                              referrerPolicy="no-referrer"
+                              onClick={() => window.open(msg.image_url, '_blank')}
+                            />
+                            {msg.text && <p>{msg.text}</p>}
+                          </div>
+                        ) : (
+                          <p>{msg.text}</p>
+                        )}
                         <div className={`absolute top-0 w-2 h-2 ${isMe ? "-right-1 bg-blue-600" : "-left-1 bg-neutral-800"}`} 
                              style={{ clipPath: isMe ? 'polygon(0 0, 0 100%, 100% 0)' : 'polygon(0 0, 100% 100%, 100% 0)' }} />
                       </div>
 
-                      {/* Reaction Trigger */}
                       <button 
                         onClick={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)}
                         className={`absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-neutral-800 border border-neutral-700 rounded-full hover:bg-neutral-700 z-20 ${isMe ? "-left-10" : "-right-10"}`}
@@ -389,7 +461,6 @@ export default function App() {
                         <Smile className="w-3.5 h-3.5 text-neutral-400" />
                       </button>
 
-                      {/* Emoji Picker */}
                       <AnimatePresence>
                         {showEmojiPicker === msg.id && (
                           <motion.div
@@ -412,7 +483,6 @@ export default function App() {
                       </AnimatePresence>
                     </div>
 
-                    {/* Reactions Display */}
                     {Object.keys(reactionGroups).length > 0 && (
                       <div className={`flex flex-wrap gap-1 mt-1.5 ${isMe ? "justify-end" : "justify-start"}`}>
                         {Object.entries(reactionGroups).map(([emoji, count]) => {
@@ -422,9 +492,7 @@ export default function App() {
                               key={emoji}
                               onClick={() => handleReaction(msg.id, emoji)}
                               className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border transition-all ${
-                                hasReacted 
-                                  ? "bg-blue-600/20 border-blue-500/50 text-blue-400" 
-                                  : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700"
+                                hasReacted ? "bg-blue-600/20 border-blue-500/50 text-blue-400" : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700"
                               }`}
                             >
                               <span>{emoji}</span>
@@ -441,7 +509,6 @@ export default function App() {
           )}
         </AnimatePresence>
         
-        {/* Typing Indicator */}
         <AnimatePresence>
           {typingUsers.length > 0 && (
             <motion.div
@@ -459,7 +526,6 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        
         <div ref={messagesEndRef} />
       </main>
 
@@ -483,18 +549,8 @@ export default function App() {
                 This will permanently delete all messages in <span className="text-white font-bold">#{room}</span> for everyone. This action cannot be undone.
               </p>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowClearConfirm(false)}
-                  className="flex-1 px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl transition-colors text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleClearChat}
-                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-colors text-sm"
-                >
-                  Clear All
-                </button>
+                <button onClick={() => setShowClearConfirm(false)} className="flex-1 px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl transition-colors text-sm">Cancel</button>
+                <button onClick={handleClearChat} className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-colors text-sm">Clear All</button>
               </div>
             </motion.div>
           </div>
@@ -502,15 +558,30 @@ export default function App() {
       </AnimatePresence>
 
       {/* Input Area */}
-      <footer className="fixed bottom-0 left-0 right-0 p-4 sm:p-6 border-t border-neutral-800 bg-neutral-900/80 backdrop-blur-lg z-40">
-        <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-3 relative">
+      <footer className="fixed bottom-0 left-0 right-0 p-3 sm:p-6 border-t border-neutral-800 bg-neutral-900/80 backdrop-blur-lg z-40">
+        <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-2 sm:gap-3 relative">
           <div className="relative flex-1 flex items-center">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute left-3 text-neutral-500 hover:text-blue-500 transition-colors"
+              title="Send Image"
+            >
+              {isUploading ? <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <ImageIcon className="w-5 h-5" />}
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageUpload}
+              accept="image/*"
+              className="hidden"
+            />
             <input
               type="text"
               value={message}
               onChange={handleTyping}
               placeholder="Type a message..."
-              className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
+              className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
             />
             <button
               type="button"
@@ -547,7 +618,7 @@ export default function App() {
           </div>
           <button
             type="submit"
-            disabled={!message.trim()}
+            disabled={!message.trim() && !isUploading}
             className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-900/20 active:scale-95 flex-shrink-0"
           >
             <Send className="w-5 h-5" />
