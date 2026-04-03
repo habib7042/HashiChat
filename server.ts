@@ -60,6 +60,11 @@ async function initDb() {
       );
     `);
 
+    // Migration: Drop NOT NULL constraint from text column if it exists
+    await client.query(`
+      ALTER TABLE messages ALTER COLUMN text DROP NOT NULL;
+    `);
+
     // Migration: Add pin to rooms if it doesn't exist
     await client.query(`
       DO $$ 
