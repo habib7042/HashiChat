@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { Send, User, Hash, MessageSquare, LogIn } from "lucide-react";
+import { Send, User, Hash, MessageSquare, LogIn, Copy, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface Message {
@@ -17,6 +17,7 @@ export default function App() {
   const [room, setRoom] = useState("general");
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [copied, setCopied] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,6 +72,12 @@ export default function App() {
     }
   };
 
+  const copyRoomCode = () => {
+    navigator.clipboard.writeText(room);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 font-sans">
@@ -107,18 +114,35 @@ export default function App() {
 
             <div>
               <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 ml-1">
-                Room
+                Chat Code
               </label>
-              <div className="relative">
-                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
-                <input
-                  type="text"
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value.toLowerCase())}
-                  placeholder="general"
-                  className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                  <input
+                    type="text"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                    placeholder="e.g. alpha-123"
+                    className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                    required
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+                    setRoom(code);
+                  }}
+                  className="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 px-4 rounded-xl text-xs font-medium transition-colors"
+                  title="Generate random code"
+                >
+                  Generate
+                </button>
               </div>
+              <p className="text-[10px] text-neutral-600 mt-1.5 ml-1">
+                Share this code with others to have them join your private chat.
+              </p>
             </div>
 
             <button
@@ -144,9 +168,25 @@ export default function App() {
           </div>
           <div>
             <h2 className="text-white font-semibold leading-none">LiveStream Chat</h2>
-            <div className="flex items-center gap-1.5 mt-1">
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-medium">#{room}</span>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-medium">#{room}</span>
+              </div>
+              <button 
+                onClick={copyRoomCode}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 transition-colors group"
+                title="Copy Chat Code"
+              >
+                {copied ? (
+                  <Check className="w-2.5 h-2.5 text-green-500" />
+                ) : (
+                  <Copy className="w-2.5 h-2.5 text-neutral-500 group-hover:text-neutral-300" />
+                )}
+                <span className="text-[9px] text-neutral-500 group-hover:text-neutral-300 font-medium">
+                  {copied ? "Copied!" : "Copy Code"}
+                </span>
+              </button>
             </div>
           </div>
         </div>
