@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { Send, User, Hash, MessageSquare, LogIn, Copy, Check, Smile, Trash2, X, AlertTriangle, Image as ImageIcon, Lock, ShieldCheck, Plus } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { Send, User, MessageSquare, LogIn, Check, Smile, Trash2, X, AlertTriangle, Image as ImageIcon, Lock, Plus, Paperclip, MoreVertical, Search, CheckCheck } from "lucide-react";
 
 interface Reaction {
   emoji: string;
@@ -33,22 +32,22 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState<(string | number) | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+  const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
   useEffect(() => {
     const newSocket = io({
-      transports: ["websocket", "polling"], // Prefer websocket for large payloads
+      transports: ["websocket", "polling"],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
     });
@@ -146,20 +145,20 @@ export default function App() {
     scrollToBottom();
   }, [messages, typingUsers]);
 
-  // Client-side cleanup fallback: remove messages older than 2m 5s
+  // Client-side cleanup fallback
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date().getTime();
       setMessages(prev => prev.filter(msg => {
         const msgTime = new Date(msg.timestamp).getTime();
-        return (now - msgTime) < 125000; // 2 minutes + 5 seconds buffer
+        return (now - msgTime) < 125000;
       }));
     }, 10000);
     return () => clearInterval(interval);
   }, []);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -167,6 +166,18 @@ export default function App() {
     if (username.trim() && room.trim()) {
       setIsLoggedIn(true);
       socket?.emit("join-room", { room, pin });
+    }
+  };
+
+  const switchRoom = (newRoom: string, roomPin: string = "") => {
+    if (room === newRoom) return;
+    if (socket) {
+      socket.emit("leave-room", { room });
+      setMessages([]);
+      setTypingUsers([]);
+      setRoom(newRoom);
+      setPin(roomPin);
+      socket.emit("join-room", { room: newRoom, pin: roomPin });
     }
   };
 
@@ -251,472 +262,372 @@ export default function App() {
     setShowEmojiPicker(null);
   };
 
-  const copyRoomCode = () => {
-    navigator.clipboard.writeText(room);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 font-sans">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-10 shadow-2xl flex flex-col md:flex-row gap-10"
-        >
-          <div className="flex-1">
-            <div className="flex flex-col items-center md:items-start mb-8">
-              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
-                <MessageSquare className="text-white w-8 h-8" />
-              </div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">JogaJog</h1>
-              <p className="text-neutral-400 text-sm mt-1">Ephemeral real-time chat.</p>
+      <div className="min-h-screen bg-[#111b21] flex flex-col font-sans">
+        {/* WhatsApp-style top green bar */}
+        <div className="h-56 bg-[#00a884] w-full absolute top-0 left-0 z-0 hidden md:block" />
+
+        <div className="flex-1 flex items-center justify-center p-4 z-10">
+          <div className="w-full max-w-4xl bg-[#202c33] rounded shadow-xl flex flex-col md:flex-row overflow-hidden min-h-[500px]">
+            {/* Left Info Side */}
+            <div className="flex-1 p-10 flex flex-col justify-center bg-[#202c33] border-b md:border-b-0 md:border-r border-[#2a3942]">
+               <div className="flex items-center gap-3 mb-8">
+                  <div className="w-10 h-10 bg-[#00a884] rounded-full flex items-center justify-center">
+                    <MessageSquare className="text-white w-5 h-5" />
+                  </div>
+                  <h1 className="text-2xl font-normal text-[#e9edef]">WhatsApp Web Clone</h1>
+               </div>
+               <p className="text-[#8696a0] text-lg mb-6 leading-relaxed">
+                 Send and receive messages without keeping your phone online.<br/>
+                 Join a room to start ephemeral chatting.
+               </p>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-5">
-              <AnimatePresence>
+            {/* Right Login Form */}
+            <div className="flex-1 p-10 flex flex-col justify-center bg-[#111b21]">
+              <form onSubmit={handleLogin} className="space-y-6">
                 {errorMessage && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="bg-red-500/10 border border-red-500/30 text-red-500 p-3 rounded-xl text-xs font-medium flex items-center gap-2"
-                  >
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <div className="bg-[#ef5350]/10 text-[#ef5350] p-3 rounded text-sm flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
                     {errorMessage}
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
 
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
-                  Your Name
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                <div>
+                  <label className="block text-sm font-medium text-[#8696a0] mb-2">Display Name</label>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Display name"
-                    className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-2xl py-3.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                    placeholder="Your name"
+                    className="w-full bg-[#202c33] text-[#e9edef] border-none rounded py-3 px-4 focus:outline-none focus:ring-1 focus:ring-[#00a884]"
                     required
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
-                    Room Name
-                  </label>
-                  <div className="relative">
-                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#8696a0] mb-2">Room Name</label>
                     <input
                       type="text"
                       value={room}
-                      onChange={(e) => setRoom(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                      placeholder="e.g. secret-base"
-                      className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-2xl py-3.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                      onChange={(e) => setRoom(e.target.value.toLowerCase().replace(/\\s+/g, '-'))}
+                      placeholder="e.g. general"
+                      className="w-full bg-[#202c33] text-[#e9edef] border-none rounded py-3 px-4 focus:outline-none focus:ring-1 focus:ring-[#00a884]"
                       required
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 ml-1">
-                    PIN (Optional)
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                  <div>
+                    <label className="block text-sm font-medium text-[#8696a0] mb-2">PIN (Optional)</label>
                     <input
                       type="password"
                       value={pin}
                       onChange={(e) => setPin(e.target.value)}
                       placeholder="Room PIN"
-                      className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-2xl py-3.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                      className="w-full bg-[#202c33] text-[#e9edef] border-none rounded py-3 px-4 focus:outline-none focus:ring-1 focus:ring-[#00a884]"
                     />
                   </div>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 active:scale-[0.98] text-lg"
-              >
-                <LogIn className="w-5 h-5" />
-                Join or Create Room
-              </button>
-            </form>
-          </div>
-
-          <div className="flex flex-col w-full md:w-64 md:border-l border-neutral-800 md:pl-8 mt-6 md:mt-0 pt-6 md:pt-0 border-t md:border-t-0">
-            <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-green-500" />
-              Active Rooms
-            </h3>
-            <div className="flex-1 max-h-48 md:max-h-none overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-              {activeRooms.length === 0 ? (
-                <p className="text-xs text-neutral-600 italic">No active rooms yet.</p>
-              ) : (
-                activeRooms.map(r => (
-                  <button
-                    key={r.name}
-                    onClick={() => setRoom(r.name)}
-                    className="w-full text-left p-3 rounded-xl bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/50 hover:border-neutral-600 transition-all group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-neutral-300 group-hover:text-white truncate">#{r.name}</span>
-                      {r.has_pin && <Lock className="w-3 h-3 text-neutral-600" />}
-                    </div>
-                  </button>
-                ))
-              )}
+                <button
+                  type="submit"
+                  className="w-full bg-[#00a884] hover:bg-[#008f6f] text-[#111b21] font-medium py-3 rounded transition-colors flex items-center justify-center gap-2 mt-4"
+                >
+                  <LogIn className="w-5 h-5" />
+                  Join Room
+                </button>
+              </form>
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-neutral-950 flex flex-col font-sans">
-      {/* Header */}
-      <header className="h-16 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <MessageSquare className="text-white w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-white font-semibold leading-none">JogaJog</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-medium">#{room}</span>
-              </div>
-              <button 
-                onClick={copyRoomCode}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 transition-colors group"
-              >
-                {copied ? (
-                  <Check className="w-2.5 h-2.5 text-green-500" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 text-neutral-500 group-hover:text-neutral-300" />
-                )}
-                <span className="text-[9px] text-neutral-500 group-hover:text-neutral-300 font-medium">
-                  {copied ? "Copied!" : "Copy"}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 sm:gap-4">
-          {isAdmin && (
-            <button
-              onClick={() => setShowClearConfirm(true)}
-              className="hidden xs:flex items-center gap-2 px-2.5 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 text-red-500 rounded-lg text-xs font-semibold transition-all"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear</span>
-            </button>
-          )}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="text-right hidden xs:block">
-              <p className="text-sm text-white font-medium truncate max-w-[80px]">{username}</p>
-              {isAdmin && <p className="text-[9px] text-blue-400 font-bold uppercase tracking-tighter">Admin</p>}
-            </div>
-            <div className="w-9 h-9 bg-neutral-800 rounded-full flex items-center justify-center border border-neutral-700">
-              <User className="text-neutral-400 w-4 h-4" />
-            </div>
-          </div>
-        </div>
-      </header>
+  const filteredRooms = activeRooms.filter(r => r.name.includes(searchQuery.toLowerCase()));
 
-      {/* Messages Area */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-4xl mx-auto w-full pb-32 sm:pb-32">
-        <AnimatePresence initial={false}>
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-neutral-500 py-20">
-              <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mb-4 border border-neutral-800">
-                <Hash className="w-8 h-8 opacity-20" />
+  return (
+    <div className="h-screen w-full bg-[#111b21] flex overflow-hidden font-sans text-[#e9edef]">
+
+      {/* Left Sidebar */}
+      <div className="w-full md:w-[30%] lg:w-[400px] border-r border-[#2a3942] flex flex-col bg-[#111b21]">
+        {/* Sidebar Header */}
+        <div className="h-[60px] bg-[#202c33] flex items-center justify-between px-4 shrink-0">
+          <div className="flex items-center gap-3">
+             <div className="w-10 h-10 rounded-full bg-[#6a7175] flex items-center justify-center">
+               <User className="text-[#d1d7db] w-6 h-6" />
+             </div>
+             <span className="font-medium">{username}</span>
+          </div>
+          <div className="flex gap-4 text-[#aebac1]">
+            <button className="hover:text-[#e9edef]"><MessageSquare className="w-5 h-5" /></button>
+            <button className="hover:text-[#e9edef]"><MoreVertical className="w-5 h-5" /></button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="p-2 border-b border-[#202c33] bg-[#111b21]">
+          <div className="bg-[#202c33] rounded-lg flex items-center px-3 py-1.5 gap-3">
+            <Search className="w-4 h-4 text-[#8696a0]" />
+            <input
+              type="text"
+              placeholder="Search or start new chat"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent border-none focus:outline-none text-sm w-full text-[#e9edef] placeholder-[#8696a0]"
+            />
+          </div>
+        </div>
+
+        {/* Room List */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#111b21]">
+          {filteredRooms.length === 0 ? (
+            <div className="text-center py-10 text-[#8696a0] text-sm">No active rooms found.</div>
+          ) : (
+            filteredRooms.map(r => (
+              <div
+                key={r.name}
+                onClick={() => switchRoom(r.name)}
+                className={`flex items-center px-3 py-3 hover:bg-[#202c33] cursor-pointer ${room === r.name ? 'bg-[#2a3942]' : ''}`}
+              >
+                <div className="w-12 h-12 rounded-full bg-[#00a884] flex items-center justify-center shrink-0 mr-3 text-xl font-medium">
+                  {r.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0 border-b border-[#202c33] pb-3">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-[17px] truncate">{r.name}</span>
+                    {r.has_pin && <Lock className="w-3 h-3 text-[#8696a0]" />}
+                  </div>
+                  <div className="text-sm text-[#8696a0] truncate flex items-center gap-1">
+                    {r.name === room ? "Active now" : "Click to join"}
+                  </div>
+                </div>
               </div>
-              <p className="text-sm">No messages yet. Start the conversation!</p>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Right Chat Area */}
+      <div className="flex-1 flex flex-col bg-[#0b141a] relative chat-bg">
+
+        {/* Chat Header */}
+        <div className="h-[60px] bg-[#202c33] flex items-center justify-between px-4 shrink-0 z-10">
+          <div className="flex items-center gap-3 cursor-pointer">
+            <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-xl font-medium">
+               {room.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="font-medium text-[16px]">{room}</div>
+              <div className="text-xs text-[#8696a0]">
+                {typingUsers.length > 0
+                  ? `${typingUsers.join(", ")} typing...`
+                  : "tap here for group info"}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-[#aebac1]">
+            <Search className="w-5 h-5 hover:text-[#e9edef] cursor-pointer" />
+            {isAdmin && (
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                title="Clear Chat"
+                className="hover:text-[#ef5350] transition-colors"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
+            <MoreVertical className="w-5 h-5 hover:text-[#e9edef] cursor-pointer" />
+          </div>
+        </div>
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-2 custom-scrollbar z-0">
+          {messages.length === 0 ? (
+            <div className="flex justify-center mt-10">
+              <div className="bg-[#182229] text-[#8696a0] text-xs py-1.5 px-3 rounded-lg shadow-sm">
+                Messages to this group are ephemeral and disappear after a few minutes.
+              </div>
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, index) => {
               const isMe = msg.sender === username;
-              const colors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-cyan-500'];
-              const colorIndex = msg.sender.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
-              const avatarColor = colors[colorIndex];
-              const reactionGroups = msg.reactions.reduce((acc, r) => {
-                acc[r.emoji] = (acc[r.emoji] || 0) + 1;
-                return acc;
-              }, {} as Record<string, number>);
+              const showTail = index === 0 || messages[index - 1].sender !== msg.sender;
+              const colors = ['#34b7f1', '#ff7a79', '#25d366', '#f0b330', '#a695e7', '#e17055'];
+              const senderColor = colors[msg.sender.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length];
 
               return (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className={`flex items-end gap-2 sm:gap-3 ${isMe ? "flex-row-reverse" : "flex-row"}`}
-                >
-                  <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] sm:text-[10px] font-bold text-white shadow-sm border border-white/10 ${isMe ? 'bg-blue-600' : avatarColor}`}>
-                    {msg.sender.substring(0, 2).toUpperCase()}
-                  </div>
+                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
+                  <div
+                    className={`relative max-w-[85%] md:max-w-[65%] rounded-lg shadow-sm px-2 pt-1 pb-2 text-[15px] ${
+                      isMe ? 'bg-[#005c4b]' : 'bg-[#202c33]'
+                    } ${showTail && isMe ? 'rounded-tr-none' : ''} ${showTail && !isMe ? 'rounded-tl-none' : ''}`}
+                  >
+                    {/* Tail SVG */}
+                    {showTail && (
+                      <span className={`absolute top-0 w-2 h-3 ${isMe ? '-right-2 text-[#005c4b]' : '-left-2 text-[#202c33]'}`}>
+                        <svg viewBox="0 0 8 13" width="8" height="13" className="fill-current">
+                          {isMe ? (
+                            <path d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z" />
+                          ) : (
+                            <path d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z" />
+                          )}
+                        </svg>
+                      </span>
+                    )}
 
-                  <div className={`flex flex-col max-w-[85%] sm:max-w-[65%] ${isMe ? "items-end" : "items-start"}`}>
-                    <div className={`flex items-center gap-2 mb-1 px-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
-                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight">{isMe ? "You" : msg.sender}</span>
-                      <span className="text-[10px] text-neutral-600 font-medium">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-
-                    <div className="relative group">
-                      <div
-                        className={`relative px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl text-sm shadow-md transition-all hover:shadow-lg overflow-hidden ${
-                          isMe
-                            ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-none border border-blue-500/30"
-                            : "bg-neutral-800 text-neutral-200 rounded-tl-none border border-neutral-700/50"
-                        }`}
-                      >
-                        {msg.image_url ? (
-                          <div className="flex flex-col gap-2">
-                            <img 
-                              src={msg.image_url} 
-                              alt="Shared" 
-                              className="max-w-full rounded-lg shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
-                              referrerPolicy="no-referrer"
-                              onClick={() => window.open(msg.image_url, '_blank')}
-                            />
-                            {msg.text && <p>{msg.text}</p>}
-                          </div>
-                        ) : (
-                          <p>{msg.text}</p>
-                        )}
-                        <div className={`absolute top-0 w-2 h-2 ${isMe ? "-right-1 bg-blue-600" : "-left-1 bg-neutral-800"}`} 
-                             style={{ clipPath: isMe ? 'polygon(0 0, 0 100%, 100% 0)' : 'polygon(0 0, 100% 100%, 100% 0)' }} />
-                      </div>
-
-                      <button 
-                        onClick={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)}
-                        className={`absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-neutral-800 border border-neutral-700 rounded-full hover:bg-neutral-700 z-20 ${isMe ? "-left-10" : "-right-10"}`}
-                      >
-                        <Smile className="w-3.5 h-3.5 text-neutral-400" />
-                      </button>
-
-                      <AnimatePresence>
-                        {showEmojiPicker === msg.id && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.8, y: 10 }}
-                            className={`absolute bottom-full mb-2 p-1 bg-neutral-900 border border-neutral-800 rounded-full shadow-xl flex gap-1 z-30 ${isMe ? "right-0" : "left-0"}`}
-                          >
-                            {EMOJIS.map(emoji => (
-                              <button
-                                key={emoji}
-                                onClick={() => handleReaction(msg.id, emoji)}
-                                className="w-8 h-8 flex items-center justify-center hover:bg-neutral-800 rounded-full transition-colors text-lg"
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    {Object.keys(reactionGroups).length > 0 && (
-                      <div className={`flex flex-wrap gap-1 mt-1.5 ${isMe ? "justify-end" : "justify-start"}`}>
-                        {Object.entries(reactionGroups).map(([emoji, count]) => {
-                          const hasReacted = msg.reactions.some(r => r.emoji === emoji && r.username === username);
-                          return (
-                            <button
-                              key={emoji}
-                              onClick={() => handleReaction(msg.id, emoji)}
-                              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border transition-all ${
-                                hasReacted ? "bg-blue-600/20 border-blue-500/50 text-blue-400" : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700"
-                              }`}
-                            >
-                              <span>{emoji}</span>
-                              <span className="font-bold">{count}</span>
-                            </button>
-                          );
-                        })}
+                    {!isMe && showTail && (
+                      <div className="text-[13px] font-medium mb-0.5" style={{ color: senderColor }}>
+                        {msg.sender}
                       </div>
                     )}
+
+                    {msg.image_url && (
+                      <div className="mt-1 mb-1">
+                        <img
+                          src={msg.image_url}
+                          alt="Shared"
+                          className="max-w-full rounded cursor-pointer hover:opacity-95"
+                          onClick={() => window.open(msg.image_url, '_blank')}
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-end gap-2">
+                       <span className="leading-snug break-words">{msg.text}</span>
+                       <div className="flex items-center gap-1 ml-auto shrink-0 float-right pt-2 -mb-1">
+                         <span className="text-[11px] text-white/60">
+                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         </span>
+                         {isMe && <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />}
+                       </div>
+                    </div>
+
+                    {/* Emoji Reaction Button (Hidden until hover) */}
+                    <button
+                      onClick={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)}
+                      className={`absolute top-1 opacity-0 group-hover:opacity-100 p-1 bg-black/20 rounded-full hover:bg-black/40 z-20 transition-opacity ${isMe ? '-left-8' : '-right-8'}`}
+                    >
+                      <Smile className="w-4 h-4 text-[#aebac1]" />
+                    </button>
+
+                    {/* Reactions Display */}
+                    {msg.reactions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1 bg-black/20 rounded-full px-1.5 py-0.5 inline-flex shadow-sm absolute -bottom-3 left-2 border border-[#202c33]">
+                        {Object.entries(
+                          msg.reactions.reduce((acc, r) => ({ ...acc, [r.emoji]: (acc[r.emoji] || 0) + 1 }), {} as Record<string, number>)
+                        ).map(([emoji, count]) => (
+                          <div key={emoji} className="flex items-center gap-0.5 text-[11px]" onClick={() => handleReaction(msg.id, emoji)}>
+                            <span>{emoji}</span>
+                            {(count as number) > 1 && <span className="text-white/80">{String(count)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Emoji Picker Dropdown */}
+                    {showEmojiPicker === msg.id && (
+                      <div className={`absolute bottom-full mb-1 bg-[#202c33] border border-[#2a3942] rounded-full shadow-lg flex px-2 py-1 z-30 ${isMe ? 'right-0' : 'left-0'}`}>
+                        {EMOJIS.map(emoji => (
+                          <button key={emoji} onClick={() => handleReaction(msg.id, emoji)} className="w-8 h-8 text-xl hover:bg-[#2a3942] rounded-full flex items-center justify-center">
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                   </div>
-                </motion.div>
+                </div>
               );
             })
           )}
-        </AnimatePresence>
-        
-        <AnimatePresence>
-          {typingUsers.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 5 }}
-              className="flex items-center gap-2 text-neutral-500 text-[10px] font-medium ml-12"
-            >
-              <div className="flex gap-1">
-                <span className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span>{typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <div ref={messagesEndRef} />
-      </main>
+          <div ref={messagesEndRef} className="h-4" />
+        </div>
 
-      {/* Image Preview / Compression Dialog */}
-      <AnimatePresence>
-        {previewImage && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-white">Preview & Send</h3>
-                <button onClick={() => setPreviewImage(null)} className="text-neutral-500 hover:text-white">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="relative aspect-video bg-black rounded-xl overflow-hidden mb-6 border border-neutral-800">
-                <img 
-                  src={previewImage} 
-                  alt="Compressed Preview" 
-                  className="w-full h-full object-contain"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 backdrop-blur-md rounded text-[10px] text-white font-bold uppercase tracking-widest">
-                  Compressed (~500KB)
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setPreviewImage(null)} 
-                  className="flex-1 px-4 py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleConfirmSendImage} 
-                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-900/20"
-                >
-                  Send Image
-                </button>
-              </div>
-            </motion.div>
+        {/* Input Area */}
+        <div className="min-h-[62px] bg-[#202c33] px-4 py-2 flex items-center gap-3 shrink-0 z-10">
+          <div className="flex items-center gap-2 text-[#aebac1]">
+             <button className="p-2 hover:bg-[#2a3942] rounded-full transition-colors" onClick={() => setShowEmojiPicker(showEmojiPicker === 'input' ? null : 'input')}>
+               <Smile className="w-6 h-6" />
+             </button>
+             <button className="p-2 hover:bg-[#2a3942] rounded-full transition-colors" onClick={() => fileInputRef.current?.click()}>
+               <Plus className="w-6 h-6" />
+             </button>
+             <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
           </div>
-        )}
-      </AnimatePresence>
 
-      {/* Confirmation Dialog */}
-      <AnimatePresence>
-        {showClearConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl"
-            >
-              <div className="flex items-center gap-3 mb-4 text-red-500">
-                <div className="w-10 h-10 bg-red-500/10 rounded-full flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-                <h3 className="text-lg font-bold text-white">Clear Chat History?</h3>
-              </div>
-              <p className="text-neutral-400 text-sm mb-6 leading-relaxed">
-                This will permanently delete all messages in <span className="text-white font-bold">#{room}</span> for everyone. This action cannot be undone.
-              </p>
-              <div className="flex gap-3">
-                <button onClick={() => setShowClearConfirm(false)} className="flex-1 px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl transition-colors text-sm">Cancel</button>
-                <button onClick={handleClearChat} className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-colors text-sm">Clear All</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+          <form onSubmit={handleSendMessage} className="flex-1 flex items-end">
+            <div className="flex-1 bg-[#2a3942] rounded-lg relative">
+              <input
+                type="text"
+                value={message}
+                onChange={handleTyping}
+                placeholder="Type a message"
+                className="w-full bg-transparent text-[#e9edef] px-4 py-3 focus:outline-none text-[15px]"
+              />
 
-      {/* Input Area */}
-      <footer className="fixed bottom-0 left-0 right-0 p-3 sm:p-6 border-t border-neutral-800 bg-neutral-900/80 backdrop-blur-lg z-40">
-        <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-2 sm:gap-3 relative">
-          <div className="relative flex-1 flex items-center">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute left-3 text-neutral-500 hover:text-blue-500 transition-colors"
-              title="Send Image"
-            >
-              {isCompressing || isUploading ? (
-                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <ImageIcon className="w-5 h-5" />
-              )}
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImageUpload}
-              accept="image/*"
-              className="hidden"
-            />
-            <input
-              type="text"
-              value={message}
-              onChange={handleTyping}
-              placeholder="Type a message..."
-              className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl py-3 pl-10 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker(showEmojiPicker === 'input' ? null : 'input')}
-              className="absolute right-3 text-neutral-500 hover:text-neutral-300 transition-colors"
-            >
-              <Smile className="w-5 h-5" />
-            </button>
-            
-            <AnimatePresence>
+              {/* Input Emoji Picker */}
               {showEmojiPicker === 'input' && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: -20 }}
-                  exit={{ opacity: 0, scale: 0.8, y: -10 }}
-                  className="absolute bottom-full right-0 mb-4 p-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex gap-2 z-50"
-                >
+                <div className="absolute bottom-full left-0 mb-4 bg-[#202c33] rounded-lg shadow-xl border border-[#2a3942] p-2 flex gap-1 z-50">
                   {EMOJIS.map(emoji => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => {
-                        setMessage(prev => prev + emoji);
-                        setShowEmojiPicker(null);
-                      }}
-                      className="w-10 h-10 flex items-center justify-center hover:bg-neutral-800 rounded-xl transition-colors text-xl"
-                    >
+                    <button type="button" key={emoji} onClick={() => { setMessage(p => p + emoji); setShowEmojiPicker(null); }} className="w-10 h-10 text-2xl hover:bg-[#2a3942] rounded flex items-center justify-center">
                       {emoji}
                     </button>
                   ))}
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
+            </div>
+            {message.trim() || isUploading ? (
+              <button type="submit" disabled={isUploading} className="ml-3 p-3 bg-[#00a884] text-[#111b21] rounded-full hover:bg-[#008f6f] transition-colors shadow-sm shrink-0">
+                <Send className="w-5 h-5 ml-0.5" />
+              </button>
+            ) : (
+               <button type="button" className="ml-3 p-3 text-[#aebac1] hover:bg-[#2a3942] rounded-full transition-colors shrink-0">
+                 <svg viewBox="0 0 24 24" width="24" height="24" className="fill-current"><path d="M11.999 14.942c2.005 0 3.625-1.62 3.625-3.625V4.318c0-2.005-1.62-3.625-3.625-3.625S8.374 2.313 8.374 4.318v6.999c0 2.005 1.62 3.625 3.625 3.625zM19.499 11.317c0 4.14-3.36 7.5-7.5 7.5s-7.5-3.36-7.5-7.5h-1.5c0 4.708 3.593 8.591 8.125 9.296v4.385h1.75v-4.385c4.532-.705 8.125-4.588 8.125-9.296h-1.5z"></path></svg>
+               </button>
+            )}
+          </form>
+        </div>
+
+      </div>
+
+      {/* Clear Chat Confirm Dialog */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[#3b4a54] p-6 rounded shadow-xl max-w-sm w-full mx-4">
+            <h3 className="text-[#e9edef] text-xl mb-4">Clear this chat?</h3>
+            <p className="text-[#8696a0] mb-6">Messages will be deleted for everyone in this room.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowClearConfirm(false)} className="px-5 py-2 text-[#00a884] hover:bg-[#2a3942] rounded font-medium transition-colors">Cancel</button>
+              <button onClick={handleClearChat} className="px-5 py-2 bg-[#00a884] text-[#111b21] hover:bg-[#008f6f] rounded font-medium transition-colors">Clear chat</button>
+            </div>
           </div>
-          <button
-            type="submit"
-            disabled={!message.trim() && !isUploading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-blue-900/20 active:scale-95 flex-shrink-0"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </form>
-      </footer>
+        </div>
+      )}
+
+      {/* Image Preview Dialog */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="bg-[#202c33] rounded-xl max-w-2xl w-full flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 bg-[#202c33]">
+              <div className="flex items-center gap-4">
+                <button onClick={() => setPreviewImage(null)} className="text-[#e9edef] hover:text-white"><X className="w-6 h-6" /></button>
+                <span className="text-[#e9edef] font-medium text-lg">Send photo</span>
+              </div>
+            </div>
+            <div className="bg-[#111b21] p-4 flex-1 flex items-center justify-center min-h-[300px]">
+              <img src={previewImage} alt="Preview" className="max-h-[60vh] max-w-full object-contain" />
+            </div>
+            <div className="p-4 bg-[#202c33] flex justify-end">
+               <button onClick={handleConfirmSendImage} className="w-14 h-14 bg-[#00a884] text-[#111b21] rounded-full flex items-center justify-center hover:bg-[#008f6f] transition-colors shadow-lg">
+                 <Send className="w-6 h-6 ml-1" />
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

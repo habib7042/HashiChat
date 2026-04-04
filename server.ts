@@ -163,6 +163,16 @@ async function startServer() {
       }
     });
 
+    socket.on("leave-room", (data: { room: string }) => {
+      socket.leave(data.room);
+      console.log(`User ${socket.id} left room: ${data.room}`);
+      // Also stop typing when leaving
+      socket.to(data.room).emit("user-typing", {
+        username: socket.id, // Or pass username in payload if needed
+        isTyping: false
+      });
+    });
+
     socket.on("join-room", async (data: { room: string; pin?: string }) => {
       const { room, pin } = data;
       try {
